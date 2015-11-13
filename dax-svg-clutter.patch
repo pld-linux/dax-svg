@@ -1,0 +1,375 @@
+--- dax-svg-c8dc7638977f5b09d3d709b4c0119adf892ba10c/dax/clutter-shape.c.orig	2010-08-01 23:19:42.000000000 +0200
++++ dax-svg-c8dc7638977f5b09d3d709b4c0119adf892ba10c/dax/clutter-shape.c	2015-11-10 20:30:05.597536328 +0100
+@@ -48,11 +48,11 @@ struct _ClutterShapePrivate
+ {
+     ClutterColor *color;            /* NULL means no fill color */
+     ClutterColor *border_color;     /* NULL means no stroke color */
+-    ClutterPath2D *path;
++    ClutterPath *path;
+     CoglHandle cogl_path;
+ };
+ 
+-static void clutter_path_draw_cogl (const ClutterPath2DNode *node,
++static void clutter_path_draw_cogl (const ClutterPathNode *node,
+                                     gpointer                 user_data)
+ {
+   switch (node->type)
+@@ -103,7 +103,7 @@ clutter_shape_pick (ClutterActor       *
+                                 color->green,
+                                 color->blue,
+                                 color->alpha);
+-      clutter_path_2d_foreach (priv->path, clutter_path_draw_cogl, NULL);
++      clutter_path_foreach (priv->path, clutter_path_draw_cogl, NULL);
+       cogl_path_fill();
+     }
+ }
+@@ -127,7 +127,7 @@ clutter_shape_paint (ClutterActor *self)
+   ClutterColor         tmp_col;
+ 
+   if (priv->cogl_path == COGL_INVALID_HANDLE) {
+-      clutter_path_2d_foreach (priv->path, clutter_path_draw_cogl, NULL);
++      clutter_path_foreach (priv->path, clutter_path_draw_cogl, NULL);
+       priv->cogl_path = cogl_handle_ref (cogl_get_path ());
+   } else {
+       cogl_set_path (priv->cogl_path);
+@@ -276,7 +276,7 @@ clutter_shape_class_init (ClutterShapeCl
+     pspec = g_param_spec_object ("path",
+                                  "Path",
+                                  "A path describing the shape",
+-                                 CLUTTER_TYPE_PATH_2D,
++                                 CLUTTER_TYPE_PATH,
+                                  CLUTTER_PARAM_READWRITE);
+     g_object_class_install_property (gobject_class, PROP_PATH, pspec);
+ }
+@@ -292,7 +292,7 @@ clutter_shape_init (ClutterShape *self)
+ /**
+  * clutter_shape_new:
+  *
+- * Creates a new #ClutterActor that draws a #ClutterPath2D
++ * Creates a new #ClutterActor that draws a #ClutterPath
+  *
+  * Return value: a new #ClutterActor
+  */
+--- dax-svg-c8dc7638977f5b09d3d709b4c0119adf892ba10c/dax/dax-element-path.c.orig	2010-08-01 23:19:42.000000000 +0200
++++ dax-svg-c8dc7638977f5b09d3d709b4c0119adf892ba10c/dax/dax-element-path.c	2015-11-10 19:57:52.850950771 +0100
+@@ -41,7 +41,7 @@ enum
+ 
+ struct _DaxElementPathPrivate
+ {
+-    ClutterPath2D *path;
++    ClutterPath *path;
+     DaxMatrix *transform;
+ };
+ 
+@@ -121,7 +121,7 @@ dax_element_path_class_init (DaxElementP
+     pspec = g_param_spec_object ("d",
+                                 "Path data",
+                                 "", /* FIXME */
+-                                CLUTTER_TYPE_PATH_2D,
++                                CLUTTER_TYPE_PATH,
+                                 DAX_GPARAM_READWRITE);
+     g_object_class_install_property (object_class, PROP_PATH, pspec);
+ 
+@@ -142,7 +142,7 @@ dax_element_path_new (void)
+     return g_object_new (DAX_TYPE_ELEMENT_PATH, NULL);
+ }
+ 
+-ClutterPath2D *
++ClutterPath *
+ dax_element_path_get_path (DaxElementPath *self)
+ {
+     g_return_val_if_fail (DAX_IS_ELEMENT_PATH (self), NULL);
+--- dax-svg-c8dc7638977f5b09d3d709b4c0119adf892ba10c/dax/dax-element-path.h.orig	2010-08-01 23:19:42.000000000 +0200
++++ dax-svg-c8dc7638977f5b09d3d709b4c0119adf892ba10c/dax/dax-element-path.h	2015-11-10 19:56:30.770954215 +0100
+@@ -72,7 +72,7 @@ struct _DaxElementPathClass
+ GType               dax_element_path_get_type       (void) G_GNUC_CONST;
+ 
+ DaxDomElement *     dax_element_path_new            (void);
+-ClutterPath2D *     dax_element_path_get_path       (DaxElementPath *self);
++ClutterPath *       dax_element_path_get_path       (DaxElementPath *self);
+ const DaxMatrix *   dax_element_path_get_transform  (DaxElementPath *path);
+ 
+ G_END_DECLS
+--- dax-svg-c8dc7638977f5b09d3d709b4c0119adf892ba10c/dax/dax-traverser-clutter.c.orig	2010-08-01 23:19:42.000000000 +0200
++++ dax-svg-c8dc7638977f5b09d3d709b4c0119adf892ba10c/dax/dax-traverser-clutter.c	2015-11-12 21:45:56.106760299 +0100
+@@ -168,7 +168,7 @@
+     DaxElement *element = DAX_ELEMENT (node);
+     const ClutterColor *fill_color, *stroke_color;
+     ClutterActor *shape;
+-    ClutterPath2D *path;
++    ClutterPath *path;
+     DaxMatrix *matrix;
+ 
+     shape = dax_shape_new ();
+@@ -275,10 +275,10 @@
+     clutter_container_add_actor (priv->container, rectangle);
+ }
+ 
+-static ClutterPath2D *
++static ClutterPath *
+ clutter_path_new_from_knot_sequence (const DaxKnotSequence *seq)
+ {
+-    ClutterPath2D *path;
++    ClutterPath *path;
+     const float *knots;
+     guint nb_knots, i;
+ 
+@@ -287,11 +287,11 @@
+         return NULL;
+     knots = dax_knot_sequence_get_array (seq);
+ 
+-    path = clutter_path_2d_new ();
+-    clutter_path_2d_add_move_to (path, knots[0], knots[1]);
++    path = clutter_path_new ();
++    clutter_path_add_move_to (path, knots[0], knots[1]);
+ 
+     for (i = 1; i < nb_knots; i++)
+-        clutter_path_2d_add_line_to (path, knots[i * 2], knots[i * 2 + 1]);
++        clutter_path_add_line_to (path, knots[i * 2], knots[i * 2 + 1]);
+ 
+     return path;
+ }
+@@ -306,7 +306,7 @@
+     const ClutterColor *fill_color, *stroke_color;
+     ClutterActor *polyline;
+     const DaxKnotSequence *seq;
+-    ClutterPath2D *path;
++    ClutterPath *path;
+ 
+     polyline = clutter_shape_new ();
+ 
+@@ -325,15 +325,15 @@
+     clutter_container_add_actor (priv->container, polyline);
+ }
+ 
+-static ClutterPath2D *
++static ClutterPath *
+ build_circle_path (DaxElementCircle *circle)
+ {
+-    ClutterPath2D *path;
++    ClutterPath *path;
+     ClutterUnits *cx_u, *cy_u, *r_u;
+     gfloat cx, cy, r;
+     static gfloat k = 4 * (G_SQRT2 - 1) / 3;
+ 
+-    /* Build the ClutterPath2D */
++    /* Build the ClutterPath */
+     cx_u = dax_element_circle_get_cx (circle);
+     cy_u = dax_element_circle_get_cy (circle);
+     r_u  = dax_element_circle_get_r (circle);
+@@ -341,26 +341,26 @@
+     cy = clutter_units_to_pixels (cy_u);
+     r = clutter_units_to_pixels (r_u);
+ 
+-    path = clutter_path_2d_new ();
++    path = clutter_path_new ();
+ 
+-    clutter_path_2d_add_move_to (path, cx + r, cy);
+-    clutter_path_2d_add_curve_to (path,
++    clutter_path_add_move_to (path, cx + r, cy);
++    clutter_path_add_curve_to (path,
+                                   cx + r, cy + r * k,
+                                   cx + r * k, cy + r,
+                                   cx, cy + r);
+-    clutter_path_2d_add_curve_to (path,
++    clutter_path_add_curve_to (path,
+                                   cx - r * k , cy + r,
+                                   cx - r , cy + r * k,
+                                   cx - r, cy);
+-    clutter_path_2d_add_curve_to (path,
++    clutter_path_add_curve_to (path,
+                                   cx - r, cy - r * k,
+                                   cx - r * k, cy - r,
+                                   cx, cy - r);
+-    clutter_path_2d_add_curve_to (path,
++    clutter_path_add_curve_to (path,
+                                   cx + r * k, cy - r,
+                                   cx + r, cy - r * k,
+                                   cx + r, cy);
+-    clutter_path_2d_add_close (path);
++    clutter_path_add_close (path);
+ 
+     return path;
+ }
+@@ -370,7 +370,7 @@
+                    GParamSpec       *pspec,
+                    ClutterActor     *target)
+ {
+-    ClutterPath2D *path;
++    ClutterPath *path;
+ 
+     path = build_circle_path (circle);
+     g_object_set (target, "path", path, NULL);
+@@ -385,7 +385,7 @@
+     DaxElement *element = DAX_ELEMENT (node);
+     const ClutterColor *fill_color, *stroke_color;
+     ClutterActor *circle;
+-    ClutterPath2D *path;
++    ClutterPath *path;
+ 
+     path = build_circle_path (node);
+ 
+@@ -653,12 +653,12 @@
+     }
+ }
+ 
+-static ClutterPath2D *
++static ClutterPath *
+ clutter_path_new_from_line (DaxElementLine *line)
+ {
+     ClutterUnits *x1_u, *y1_u, *x2_u, *y2_u;
+     gfloat x1, y1, x2, y2;
+-    ClutterPath2D *path;
++    ClutterPath *path;
+ 
+     x1_u = dax_element_line_get_x1 (line);
+     y1_u = dax_element_line_get_y1 (line);
+@@ -670,9 +670,9 @@
+     x2 = clutter_units_to_pixels (x2_u);
+     y2 = clutter_units_to_pixels (y2_u);
+ 
+-    path = clutter_path_2d_new ();
+-    clutter_path_2d_add_move_to (path, x1, y1);
+-    clutter_path_2d_add_line_to (path, x2, y2);
++    path = clutter_path_new ();
++    clutter_path_add_move_to (path, x1, y1);
++    clutter_path_add_line_to (path, x2, y2);
+ 
+     return path;
+ }
+@@ -686,7 +686,7 @@
+     DaxElement *element = DAX_ELEMENT (node);
+     const ClutterColor *stroke_color;
+     ClutterActor *line;
+-    ClutterPath2D *path;
++    ClutterPath *path;
+ 
+     line = clutter_shape_new ();
+     path = clutter_path_new_from_line (node);
+@@ -828,7 +828,7 @@
+ {
+     DaxTraverserClutter *build = DAX_TRAVERSER_CLUTTER (traverser);
+     DaxTraverserClutterPrivate *priv = build->priv;
+-    ClutterActor *video;
++    ClutterGstPlayback *video;
+     ClutterUnits *x_u, *y_u, *width_u, *height_u;
+     gfloat x, y, width, height;
+     const gchar *uri;
+@@ -843,14 +843,14 @@
+     width = clutter_units_to_pixels (width_u);
+     height = clutter_units_to_pixels (height_u);
+ 
+-    video = clutter_gst_video_texture_new ();
++    video = clutter_gst_playback_new ();
+     clutter_actor_set_x (video, x);
+     clutter_actor_set_y (video, x);
+     clutter_actor_set_width (video, width);
+     clutter_actor_set_height (video, height);
+ 
+     uri = dax_element_video_get_uri (node);
+-    clutter_media_set_uri (CLUTTER_MEDIA (video), uri);
++    clutter_gst_playback_set_uri (CLUTTER_GST_PLAYBACK (video), uri);
+     g_ptr_array_add (priv->media, video);
+ 
+     clutter_container_add_actor (priv->container, video);
+--- dax-svg-c8dc7638977f5b09d3d709b4c0119adf892ba10c/dax/dax-utils.c.orig	2010-08-01 23:19:42.000000000 +0200
++++ dax-svg-c8dc7638977f5b09d3d709b4c0119adf892ba10c/dax/dax-utils.c	2015-11-10 20:33:51.834193500 +0100
+@@ -214,7 +214,7 @@ _dax_utils_is_iri (const gchar *str)
+ }
+ 
+ static void
+-dump_path2d_node (ClutterPath2DNode *node)
++dump_path_node (ClutterPathNode *node)
+ {
+   switch (node->type)
+     {
+@@ -256,18 +256,18 @@ dump_path2d_node (ClutterPath2DNode *nod
+ }
+ 
+ void
+-_dax_utils_dump_path_2d (ClutterPath2D *path)
++_dax_utils_dump_path (ClutterPath *path)
+ {
+   GSList *nodes, *e;
+ 
+   g_message ("path %p", path);
+ 
+-  nodes = clutter_path_2d_get_nodes (path);
++  nodes = clutter_path_get_nodes (path);
+   for (e = nodes; e; e = g_slist_next (e))
+     {
+-      ClutterPath2DNode *node = e->data;
++      ClutterPathNode *node = e->data;
+ 
+-      dump_path2d_node (node);
++      dump_path_node (node);
+     }
+ 
+   g_slist_free (nodes);
+--- dax-svg-c8dc7638977f5b09d3d709b4c0119adf892ba10c/dax/dax-utils.h.orig	2010-08-01 23:19:42.000000000 +0200
++++ dax-svg-c8dc7638977f5b09d3d709b4c0119adf892ba10c/dax/dax-utils.h	2015-11-10 20:33:22.384194736 +0100
+@@ -37,7 +37,7 @@ gboolean    _dax_utils_parse_simple_floa
+ gboolean    _dax_utils_parse_float              (char   **string,
+                                                  gfloat  *x);
+ gboolean    _dax_utils_is_iri                   (const gchar *str);
+-void        _dax_utils_dump_path_2d             (ClutterPath2D *path);
++void        _dax_utils_dump_path                (ClutterPath *path);
+ void        _dax_utils_dump_cogl_matrix         (CoglMatrix *m);
+ 
+ typedef enum {
+--- dax-svg-c8dc7638977f5b09d3d709b4c0119adf892ba10c/tests/test-parser.c.orig	2010-08-01 23:19:42.000000000 +0200
++++ dax-svg-c8dc7638977f5b09d3d709b4c0119adf892ba10c/tests/test-parser.c	2015-11-10 20:32:40.780863149 +0100
+@@ -137,8 +137,8 @@ test_path (void)
+ {
+     DaxDomDocument *document;
+     DaxDomNode *svg, *path;
+-    ClutterPath2D *clutter_path;
+-    ClutterPath2DNode node;
++    ClutterPath *clutter_path;
++    ClutterPathNode node;
+ 
+     document = dax_dom_document_new_from_file ("08_01.svg", NULL);
+     g_assert (DAX_IS_DOM_DOCUMENT (document));
+@@ -148,20 +148,20 @@ test_path (void)
+     path = dax_dom_node_get_last_child (svg);
+     g_assert (DAX_IS_ELEMENT_PATH (path));
+     clutter_path = dax_element_path_get_path (DAX_ELEMENT_PATH (path));
+-    g_assert (clutter_path_2d_get_n_nodes (clutter_path) == 4);
+-    clutter_path_2d_get_node (clutter_path, 0, &node);
++    g_assert (clutter_path_get_n_nodes (clutter_path) == 4);
++    clutter_path_get_node (clutter_path, 0, &node);
+     g_assert (node.type == CLUTTER_PATH_MOVE_TO);
+     g_assert_cmpint (node.points[0].x, ==, 100);
+     g_assert_cmpint (node.points[0].y, ==, 100);
+-    clutter_path_2d_get_node (clutter_path, 1, &node);
++    clutter_path_get_node (clutter_path, 1, &node);
+     g_assert (node.type == CLUTTER_PATH_LINE_TO);
+     g_assert_cmpint (node.points[0].x, ==, 300);
+     g_assert_cmpint (node.points[0].y, ==, 100);
+-    clutter_path_2d_get_node (clutter_path, 2, &node);
++    clutter_path_get_node (clutter_path, 2, &node);
+     g_assert (node.type == CLUTTER_PATH_LINE_TO);
+     g_assert_cmpint (node.points[0].x, ==, 200);
+     g_assert_cmpint (node.points[0].y, ==, 300);
+-    clutter_path_2d_get_node (clutter_path, 3, &node);
++    clutter_path_get_node (clutter_path, 3, &node);
+     g_assert (node.type == CLUTTER_PATH_CLOSE);
+ }
+ 
+--- dax-svg-c8dc7638977f5b09d3d709b4c0119adf892ba10c/dax/dax-actor.c.orig	2010-08-01 23:19:42.000000000 +0200
++++ dax-svg-c8dc7638977f5b09d3d709b4c0119adf892ba10c/dax/dax-actor.c	2015-11-12 21:41:11.306772267 +0100
+@@ -238,12 +238,12 @@
+ 
+     if (playing) {
+         for (i = 0; i < priv->media->len; i++)
+-            clutter_media_set_playing (g_ptr_array_index (priv->media, i),
++            clutter_gst_player_set_playing (g_ptr_array_index (priv->media, i),
+                                        TRUE);
+         clutter_score_start (priv->score);
+     } else {
+         for (i = 0; i < priv->media->len; i++)
+-            clutter_media_set_playing (g_ptr_array_index (priv->media, i),
++            clutter_gst_player_set_playing (g_ptr_array_index (priv->media, i),
+                                        FALSE);
+         clutter_score_pause (priv->score);
+     }

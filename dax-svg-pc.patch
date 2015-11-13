@@ -1,0 +1,19 @@
+--- dax-svg-c8dc7638977f5b09d3d709b4c0119adf892ba10c/dox.pc.in.orig	2010-08-01 23:19:42.000000000 +0200
++++ dax-svg-c8dc7638977f5b09d3d709b4c0119adf892ba10c/dox.pc.in	2015-11-13 18:32:25.150288367 +0100
+@@ -2,12 +2,12 @@
+ exec_prefix=@exec_prefix@
+ libdir=@libdir@
+ includedir=@includedir@
+-apiversion=@DEX_API_VERSION@
+-requires=@DEX_REQUIRES@
++apiversion=@DOX_API_VERSION@
++requires=@DOX_REQUIRES@
+ 
+ Name: Dex
+ Description: A toy navigator (support library)
+ Version: @VERSION@
+-Libs: -L${libdir} -ldex-${apiversion}
+-Cflags: -I${includedir}/dex-${apiversion}
++Libs: -L${libdir} -ldox-${apiversion}
++Cflags: -I${includedir}/dox-${apiversion}
+ Requires: ${requires}

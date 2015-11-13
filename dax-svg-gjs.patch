@@ -1,0 +1,353 @@
+--- dax-svg-c8dc7638977f5b09d3d709b4c0119adf892ba10c/configure.ac.orig	2010-08-01 23:19:42.000000000 +0200
++++ dax-svg-c8dc7638977f5b09d3d709b4c0119adf892ba10c/configure.ac	2015-11-10 18:32:03.011166889 +0100
+@@ -106,7 +106,7 @@
+ AC_HEADER_STDC
+ 
+ # Dax requires
+-DAX_REQUIRES="gjs-gi-1.0 gjs-1.0 clutter-1.0 >= 1.3.2 clutter-gst-1.0 glib-2.0 >= 2.22 gobject-2.0 gio-2.0 mx-1.0"
++DAX_REQUIRES="gjs-1.0 mozjs-24 clutter-1.0 >= 1.3.2 clutter-gst-3.0 glib-2.0 >= 2.22 gobject-2.0 gio-2.0 mx-1.0 libxml-2.0"
+ AC_SUBST(DAX_REQUIRES)
+ 
+ PKG_CHECK_MODULES([DAX], [$DAX_REQUIRES])
+--- dax-svg-c8dc7638977f5b09d3d709b4c0119adf892ba10c/dax/dax-element.c.orig	2010-08-01 23:19:42.000000000 +0200
++++ dax-svg-c8dc7638977f5b09d3d709b4c0119adf892ba10c/dax/dax-element.c	2015-11-11 21:02:22.070495865 +0100
+@@ -203,7 +203,7 @@ dax_element_handle_event (DaxXmlEventLis
+     event = dax_js_context_new_object_from_xml_event (js_context, xml_event);
+ 
+     dax_js_context_eval (js_context, code, strlen (code), "svg", NULL, NULL);
+-    dax_js_context_call_function (js_context, "__dax_handler", "o", event);
++    dax_js_context_call_function_arg_object (js_context, "__dax_handler", event);
+ }
+ 
+ static void
+--- dax-svg-c8dc7638977f5b09d3d709b4c0119adf892ba10c/dax/dax-element-handler.c.orig	2010-08-01 23:19:42.000000000 +0200
++++ dax-svg-c8dc7638977f5b09d3d709b4c0119adf892ba10c/dax/dax-element-handler.c	2015-11-11 21:03:12.577160411 +0100
+@@ -82,7 +82,7 @@ dax_element_handler_handle_event (DaxXml
+     event = dax_js_context_new_object_from_xml_event (js_context, xml_event);
+ 
+     dax_js_context_eval (js_context, code, strlen (code), "svg", NULL, NULL);
+-    dax_js_context_call_function (js_context, "__dax_handler", "o", event);
++    dax_js_context_call_function_arg_object (js_context, "__dax_handler", event);
+ }
+ 
+ static void
+--- dax-svg-c8dc7638977f5b09d3d709b4c0119adf892ba10c/dax/dax-gjs-context.c.orig	2010-08-01 23:19:42.000000000 +0200
++++ dax-svg-c8dc7638977f5b09d3d709b4c0119adf892ba10c/dax/dax-gjs-context.c	2015-11-11 21:06:45.497151476 +0100
+@@ -22,7 +22,8 @@
+ #include <string.h>
+ 
+ #include <gjs/gjs.h>
+-#include <gjs/gi/object.h>
++#include <gjs/gjs-module.h>
++#include <gi/object.h>
+ 
+ #include "dax-js-context.h"
+ 
+@@ -42,7 +43,7 @@ struct _DaxJsContextPrivate
+ };
+ 
+ static void
+-js_xml_event_finalize (JSContext *context,
++js_xml_event_finalize (JSFreeOp  *fop,
+                        JSObject  *obj)
+ {
+     //g_message (G_STRLOC ": not implemented");
+@@ -52,9 +53,9 @@ static struct JSClass js_xml_event_class
+     "DaxXmlEvent",
+     JSCLASS_HAS_PRIVATE,
+     JS_PropertyStub,
++    JS_DeletePropertyStub,
+     JS_PropertyStub,
+-    JS_PropertyStub,
+-    JS_PropertyStub,
++    JS_StrictPropertyStub,
+     JS_EnumerateStub,
+     JS_ResolveStub,
+     JS_ConvertStub,
+@@ -68,20 +69,19 @@ static JSPropertySpec js_xml_event_proto
+ 
+ static JSBool
+ js_xml_event_to_string (JSContext *context,
+-                        JSObject  *obj,
+-                        uintN      argc,
+-                        jsval     *argv,
+-                        jsval     *retval)
++                        unsigned   argc,
++                        JS::Value *vp)
+ {
+     g_message (G_STRLOC ": not implemented");
+ 
+-    *retval = JSVAL_VOID;
++    JS::CallReceiver rec = JS::CallReceiverFromVp(vp);
++    rec.rval().set(JSVAL_VOID);
+ 
+     return JS_TRUE;
+ }
+ 
+ static JSFunctionSpec js_xml_event_proto_funcs[] = {
+-    { "toString", js_xml_event_to_string, 0, 0}, /* debugging purpose */
++    { "toString", JSOP_WRAPPER(js_xml_event_to_string), 0, 0, NULL}, /* debugging purpose */
+     { NULL }
+ };
+ 
+@@ -179,7 +179,7 @@ dax_js_context_init (DaxJsContext *self)
+ DaxJsContext *
+ dax_js_context_new (void)
+ {
+-    return g_object_new (DAX_TYPE_JS_CONTEXT, NULL);
++    return (DaxJsContext *) g_object_new (DAX_TYPE_JS_CONTEXT, NULL);
+ }
+ 
+ void *
+@@ -267,42 +267,29 @@ dax_js_context_new_object_from_xml_event
+  */
+ 
+ gboolean
+-dax_js_context_call_function (DaxJsContext *context,
++dax_js_context_call_function_arg_object (DaxJsContext *context,
+                               const char   *name,
+-                              const char   *format,
+-                              ...)
++                              DaxJsObject *obj)
+ {
+     DaxJsContextPrivate *priv;
+-    va_list args;
+     JSBool ok;
+-    jsval *argv;
+-    void *mark;
++    jsval va;
+     jsval retval;
+ 
+     g_return_val_if_fail (DAX_IS_JS_CONTEXT (context), FALSE);
+ 
+     priv = context->priv;
+ 
+-    va_start (args, format);
+-
+-    argv = JS_PushArgumentsVA (priv->js_context, &mark, format, args);
+-    if (G_UNLIKELY (argv == NULL)) {
+-        g_warning (G_STRLOC ": could not push arguments onto the stack");
+-        va_end (args);
+-        return FALSE;
+-    }
++    va = OBJECT_TO_JSVAL((JSObject*)obj);
+ 
+     ok = JS_CallFunctionName (priv->js_context,
+                               JS_GetGlobalObject (priv->js_context),
+                               name,
+-                              strlen (format),
+-                              argv,
++                              1,
++                              &va,
+                               &retval);
+-    JS_PopArguments (priv->js_context, mark);
+     if (!ok)
+-        gjs_log_exception (priv->js_context, NULL);
+-
+-    va_end (args);
++        gjs_log_exception (priv->js_context);
+ 
+     return ok;
+ }
+@@ -327,7 +314,7 @@ dax_js_context_add_global_object (DaxJsC
+                          name,
+                          &js_val);
+     if (!ok)
+-        gjs_log_exception (priv->js_context, NULL);
++        gjs_log_exception (priv->js_context);
+ 
+     return ok;
+ }
+--- dax-svg-c8dc7638977f5b09d3d709b4c0119adf892ba10c/dax/dax-gjs-context.h.orig	2010-08-01 23:19:42.000000000 +0200
++++ dax-svg-c8dc7638977f5b09d3d709b4c0119adf892ba10c/dax/dax-gjs-context.h	2015-11-11 20:56:28.780510690 +0100
+@@ -80,10 +80,9 @@ gboolean        dax_js_context_eval
+                                                      gint          *retval,
+                                                      GError       **error);
+ 
+-gboolean        dax_js_context_call_function    (DaxJsContext *context,
+-                                                 const char   *name,
+-                                                 const char   *nb_args,
+-                                                 ...);
++gboolean        dax_js_context_call_function_arg_object (DaxJsContext *context,
++                                                 const char   *name,
++                                                 DaxJsObject  *obj);
+ 
+ DaxJsObject*    dax_js_context_new_object_from_gobject   (DaxJsContext *context,
+                                                           GObject     *object);
+--- dax-svg-c8dc7638977f5b09d3d709b4c0119adf892ba10c/dax/dax-gjs-function-listener.c.orig	2010-08-01 23:19:42.000000000 +0200
++++ dax-svg-c8dc7638977f5b09d3d709b4c0119adf892ba10c/dax/dax-gjs-function-listener.c	2015-11-11 21:54:26.690364736 +0100
+@@ -17,6 +17,7 @@
+  */
+ 
+ #include <gjs/gjs.h>
++#include <gjs/gjs-module.h>
+ 
+ #include "dax-internals.h"
+ #include "dax-debug.h"
+@@ -58,7 +59,7 @@ dax_js_function_listener_set_context (Da
+     DaxJsFunctionListenerPrivate *priv = listener->priv;
+ 
+     priv->js_context = context;
+-    priv->native_context = dax_js_context_get_native_context (context);
++    priv->native_context = (JSContext*)dax_js_context_get_native_context (context);
+ }
+ 
+ static JSFunction *
+@@ -77,7 +78,7 @@ dax_js_function_listener_set_function (D
+     jsval in_function;
+     JSBool ret;
+ 
+-    in_function = OBJECT_TO_JSVAL (function);
++    in_function = OBJECT_TO_JSVAL ((JSObject*)function);
+     ret = JS_ConvertValue (priv->native_context,
+                            in_function,
+                            JSTYPE_FUNCTION,
+@@ -102,7 +103,7 @@ dax_js_function_listener_handle_event (D
+     jsval argv[1], ret_val;
+     JSBool ret;
+ 
+-    event = dax_js_context_new_object_from_xml_event (priv->js_context,
++    event = (JSObject*)dax_js_context_new_object_from_xml_event ((DaxJsContext*)priv->js_context,
+                                                       xml_event);
+     argv[0] = OBJECT_TO_JSVAL (event);
+ 
+@@ -167,7 +168,7 @@ dax_js_function_listener_set_property (G
+     {
+     case PROP_CONTEXT:
+         dax_js_function_listener_set_context (listener,
+-                                              g_value_get_pointer (value));
++                                              (DaxJsContext*)g_value_get_pointer (value));
+         break;
+     case PROP_FUNCTION:
+         dax_js_function_listener_set_function (listener,
+@@ -200,13 +201,13 @@ dax_js_function_listener_class_init (Dax
+     pspec = g_param_spec_pointer ("function",
+                                   "Function",
+                                   "JS callback of the listener",
+-                                  DAX_GPARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY);
++                                  (GParamFlags)(DAX_GPARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY));
+     g_object_class_install_property (object_class, PROP_FUNCTION, pspec);
+ 
+     pspec = g_param_spec_pointer ("context",
+                                   "Context",
+                                   "JS context to use",
+-                                  DAX_GPARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY);
++                                  (GParamFlags)(DAX_GPARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY));
+     g_object_class_install_property (object_class, PROP_CONTEXT, pspec);
+ }
+ 
+@@ -222,7 +223,7 @@ DaxJsFunctionListener *
+ dax_js_function_listener_new (DaxJsContext  *context,
+                               DaxJsFunction *function)
+ {
+-    return g_object_new (DAX_TYPE_JS_FUNCTION_LISTENER,
++    return (DaxJsFunctionListener*)g_object_new (DAX_TYPE_JS_FUNCTION_LISTENER,
+                          "context", context,
+                          "function", function,
+                          NULL);
+--- dax-svg-c8dc7638977f5b09d3d709b4c0119adf892ba10c/dax/dax-gjs-udom.c.orig	2010-08-01 23:19:42.000000000 +0200
++++ dax-svg-c8dc7638977f5b09d3d709b4c0119adf892ba10c/dax/dax-gjs-udom.c	2015-11-12 17:48:58.090690562 +0100
+@@ -17,7 +17,8 @@
+  */
+ 
+ #include <gjs/gjs.h>
+-#include <gjs/gi/object.h>
++#include <gjs/gjs-module.h>
++#include <gi/object.h>
+ 
+ #include "dax-dom.h"
+ 
+@@ -29,10 +30,8 @@
+ 
+ static JSBool
+ add_event_listener (JSContext *cx,
+-                    JSObject  *obj,
+-                    uintN      argc,
+-                    jsval     *argv,
+-                    jsval     *rval)
++                    unsigned   argc,
++                    JS::Value *vp)
+ {
+     DaxJsFunctionListener *listener;
+     char *type;
+@@ -43,7 +42,9 @@ add_event_listener (JSContext *cx,
+     DaxDomDocument *document;
+     DaxJsContext *js_context;
+ 
+-    if (!JS_ConvertArguments (cx, argc, argv,
++    JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
++    JSObject *obj = JS_ComputeThis(cx, vp).toObjectOrNull();
++    if (!JS_ConvertArguments (cx, argc, args.array(),
+                               "sfb", &type, &listener_func, &use_capture))
+         {
+             return JS_FALSE;
+@@ -64,23 +65,22 @@ add_event_listener (JSContext *cx,
+ }
+ 
+ static JSFunctionSpec timer_functions[] = {
+-    JS_FS ("addEventListener", add_event_listener, 3, 0, 0),
++    JS_FS ("addEventListener", add_event_listener, 3, 0),
+     JS_FS_END
+ };
+ 
+ static JSBool
+ create_timer (JSContext *cx,
+-              JSObject  *obj,
+-              uintN      argc,
+-              jsval     *argv,
+-              jsval     *rval)
++              unsigned   argc,
++              JS::Value *vp)
+ {
+-    int32 initial_interval, repeat_interval;
++    int32_t initial_interval, repeat_interval;
+     DaxSvgTimer *timer;
+     JSObject *js_timer;
+     JSBool ret;
+ 
+-    if (!JS_ConvertArguments (cx, argc, argv,
++    JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
++    if (!JS_ConvertArguments (cx, argc, args.array(),
+                               "ii", &initial_interval, &repeat_interval))
+         {
+             return JS_FALSE;
+@@ -88,7 +88,7 @@ create_timer (JSContext *cx,
+ 
+     timer = dax_svg_timer_new (initial_interval, repeat_interval);
+     js_timer = gjs_object_from_g_object (cx, (GObject *) timer);
+-    *rval = OBJECT_TO_JSVAL (js_timer);
++    args.rval().set(OBJECT_TO_JSVAL (js_timer));
+ 
+     ret = JS_DefineFunctions(cx, js_timer, timer_functions);
+     if (G_UNLIKELY (ret == JS_FALSE)) {
+@@ -100,7 +100,7 @@ create_timer (JSContext *cx,
+ }
+ 
+ static JSFunctionSpec svg_global_functions[] = {
+-    JS_FS ("createTimer", create_timer, 2, 0, 0),
++    JS_FS ("createTimer", create_timer, 2, 0),
+     JS_FS_END
+ };
+ 
+@@ -133,7 +133,7 @@ _dax_js_udom_setup_document (DaxJsContex
+ }
+ 
+ static JSFunctionSpec svg_event_target_functions[] = {
+-    JS_FS ("addEventListener", add_event_listener, 3, 0, 0),
++    JS_FS ("addEventListener", add_event_listener, 3, 0),
+     JS_FS_END
+ };
+ 
+--- dax-svg-c8dc7638977f5b09d3d709b4c0119adf892ba10c/dax/Makefile.am.orig	2010-08-01 23:19:42.000000000 +0200
++++ dax-svg-c8dc7638977f5b09d3d709b4c0119adf892ba10c/dax/Makefile.am	2015-11-12 22:05:27.110044490 +0100
+@@ -154,6 +154,10 @@
+ 	dax-xml-private.h	\
+ 	$(NULL)
+ 
++libdax_0.2_la-dax-gjs-context.lo:: CFLAGS+=-x c++
++libdax_0.2_la-dax-gjs-function-listener.lo:: CFLAGS+=-x c++
++libdax_0.2_la-dax-gjs-udom.lo:: CFLAGS+=-x c++
++
+ lib_LTLIBRARIES = libdax-@DAX_API_VERSION@.la
+ 
+ daxdir = $(includedir)/dax-$(DAX_API_VERSION)/dax
