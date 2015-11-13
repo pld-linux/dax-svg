@@ -16,6 +16,7 @@ Source0:	https://github.com/dlespiau/dax-svg/archive/%{gitref}/%{name}-%{snap}.t
 Patch0:		%{name}-clutter.patch
 Patch1:		%{name}-gjs.patch
 Patch2:		%{name}-pc.patch
+Patch3:		%{name}-install.patch
 URL:		https://github.com/dlespiau/dax-svg/
 BuildRequires:	autoconf >= 2.59
 BuildRequires:	automake >= 1:1.10
@@ -75,6 +76,7 @@ Statyczna biblioteka Dax.
 %patch0 -p1
 %patch1 -p1
 %patch2 -p1
+%patch3 -p1
 
 %build
 %{__libtoolize}
